@@ -37,6 +37,10 @@ TIMEOUTS_CLEAN_SIZE = 512
 
 MSG_FASTOPEN = 0x20000000
 
+# SOCKS5 Auth stage definition
+NEED_AUTH = 0
+WAIT_INFO = 1
+
 # SOCKS command definition
 CMD_CONNECT = 1
 CMD_BIND = 2
@@ -213,6 +217,15 @@ class TCPRelayHandler(object):
         self._forbidden_portset = config.get('forbidden_port', None)
         if is_local:
             self._chosen_server = self._get_a_server()
+            self._user_valid = True
+            if 'socks_auth' in config and type(config['socks_auth']) == list and len(config['socks_auth']) > 1:
+                self._username = config['socks_auth'][0]
+                self._userpass = config['socks_auth'][1]
+                self._user_valid = False
+                self._reply_to_wrong_pass = False
+                self._valid_stage = 0
+                if len(config['socks_auth']) >= 3 and int(config['socks_auth'][2]) == 1:
+                    self._reply_to_wrong_pass = True
 
         self.last_activity = 0
         self._update_activity()
@@ -914,8 +927,40 @@ class TCPRelayHandler(object):
             self._write_to_sock(data, self._remote_sock)
         elif is_local and self._stage == STAGE_INIT:
             # TODO check auth method
-            self._write_to_sock(b'\x05\00', self._local_sock)
-            self._stage = STAGE_ADDR
+            # Socks5 auth added by ihciah
+            if self._user_valid:
+                self._write_to_sock(b'\x05\00', self._local_sock)
+                self._stage = STAGE_ADDR
+                return
+            if self._valid_stage == NEED_AUTH:
+                methods = data[2:]
+                if '\x02' not in methods:
+                    logging.info('Someone is trying to connect to socks without password...')
+                    if self._reply_to_wrong_pass:
+                        self._write_to_sock(b'\x05\xFF', self._local_sock)
+                    self.destroy()
+                    return
+                self._write_to_sock(b'\x05\x02', self._local_sock)
+                self._valid_stage = 1
+                return
+            if self._valid_stage == WAIT_INFO:
+                try:
+                    user_length = struct.unpack('B', data[1])[0]
+                    user = data[2: 2 + user_length]
+                    pass_length = struct.unpack('B', data[2 + user_length])[0]
+                    password = data[3 + user_length: 3 + user_length + pass_length]
+                    if user == self._username and password == self._userpass:
+                        self._user_valid = True
+                        self._write_to_sock(b'\x01\x00', self._local_sock)
+                        self._stage = STAGE_ADDR
+                    else:
+                        logging.warn('Someone is trying to connect using (%s : %s)' % (user, pass_length))
+                        if self._reply_to_wrong_pass:
+                            self._write_to_sock(b'\x01\x01', self._local_sock)
+                        self.destroy()
+                except:
+                    logging.warn("Invalid packet! Under attack?")
+                    self.destroy()
         elif self._stage == STAGE_CONNECTING:
             self._handle_stage_connecting(data)
         elif (is_local and self._stage == STAGE_ADDR) or \

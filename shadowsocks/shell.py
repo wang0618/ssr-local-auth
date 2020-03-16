@@ -132,13 +132,14 @@ def check_config(config, is_local):
 def get_config(is_local):
     global verbose
     config = {}
+    config['socks_auth'] = [0, 0, 0]
     config_path = None
     logging.basicConfig(level=logging.INFO,
                         format='%(levelname)-s: %(message)s')
     if is_local:
         shortopts = 'hd:s:b:p:k:l:m:O:o:G:g:c:t:vq'
         longopts = ['help', 'fast-open', 'pid-file=', 'log-file=', 'user=',
-                    'version']
+                    'version', 'socks-user=', 'socks-pass=', 'socks-reply-to-wrong-pass']
     else:
         shortopts = 'hd:s:p:k:m:O:o:G:g:c:t:vq'
         longopts = ['help', 'fast-open', 'pid-file=', 'log-file=', 'workers=',
@@ -210,6 +211,16 @@ def get_config(is_local):
             elif key == '--forbidden-ip':
                 config['forbidden_ip'] = to_str(value)
 
+            elif key == '--socks-user':
+                config['socks_auth'][0] = to_str(value)
+            elif key == '--socks-pass':
+                config['socks_auth'][1] = to_str(value)
+            elif key == '--socks-reply-to-wrong-pass':
+                if len(config['socks_auth']) == 2:
+                    config['socks_auth'].append(1)
+                else:
+                    config['socks_auth'][2] = 1
+
             elif key == '-d':
                 config['daemon'] = to_str(value)
             elif key == '--pid-file':
@@ -251,6 +262,7 @@ def get_config(is_local):
     config['connect_verbose_info'] = config.get('connect_verbose_info', 0)
     config['local_address'] = to_str(config.get('local_address', '127.0.0.1'))
     config['local_port'] = config.get('local_port', 1080)
+    config['socks_auth'] = config.get('socks_auth', [])
     if is_local:
         if config.get('server', None) is None:
             logging.error('server addr not specified')
@@ -315,16 +327,19 @@ A fast tunnel proxy that helps you bypass firewalls.
 You can supply configurations via either config file or command line arguments.
 
 Proxy options:
-  -c CONFIG              path to config file
-  -s SERVER_ADDR         server address
-  -p SERVER_PORT         server port, default: 8388
-  -b LOCAL_ADDR          local binding address, default: 127.0.0.1
-  -l LOCAL_PORT          local port, default: 1080
-  -k PASSWORD            password
-  -m METHOD              encryption method, default: aes-256-cfb
-  -o OBFS                obfsplugin, default: http_simple
-  -t TIMEOUT             timeout in seconds, default: 300
-  --fast-open            use TCP_FASTOPEN, requires Linux 3.7+
+  -c CONFIG                     path to config file
+  -s SERVER_ADDR                server address
+  -p SERVER_PORT                server port, default: 8388
+  -b LOCAL_ADDR                 local binding address, default: 127.0.0.1
+  -l LOCAL_PORT                 local port, default: 1080
+  -k PASSWORD                   password
+  -m METHOD                     encryption method, default: aes-256-cfb
+  -o OBFS                       obfsplugin, default: http_simple
+  -t TIMEOUT                    timeout in seconds, default: 300
+  --socks-user USERNAME         socks5 auth username
+  --socks-pass PASSWORD         socks5 auth password
+  --socks-reply-to-wrong-pass   enable repling to wrong socks auth info
+  --fast-open                   use TCP_FASTOPEN, requires Linux 3.7+
 
 General options:
   -h, --help             show this help message and exit
@@ -337,6 +352,10 @@ General options:
   --version              show version information
 
 Online help: <https://github.com/shadowsocks/shadowsocks>
+
+Usage of socks auth:
+In config.json you should write "socks_auth":["username", "password"]
+To open socks-reply-to-wrong-pass, you should write "socks_auth":["username", "password", True]
 ''')
 
 
